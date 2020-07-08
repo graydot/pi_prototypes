@@ -89,7 +89,7 @@ class PCA9685:
         temp = Angle * (2000 / 180) + 501
         self.setServoPulse(channel, temp)
     else:
-        print("Angle out of range")
+        print("Angle out of range", Angle)
         
   def start_PCA9685(self):
     self.write(self.__MODE2, 0x04)

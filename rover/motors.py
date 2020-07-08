@@ -43,27 +43,30 @@ def forward(t):
     forward_w(r)
     forward_w(l)
     sleep(t)
+    stop()
     
 def back(t):
     back_w(r)
     back_w(l)
     sleep(t)
+    stop()
     
-def stop(t):
+def stop():
     stop_w(r)
     stop_w(l)
-    sleep(t)
     
 def left(t):
     forward_w(r)
     back_w(l)
     sleep(t)
+    stop()
+
 
 def right(t):
     back_w(r)
     forward_w(l)
     sleep(t)
-    
+    stop()
     
 g.setmode(g.BCM)
 setup(r)
