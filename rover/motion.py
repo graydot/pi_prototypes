@@ -12,7 +12,9 @@ import cv2
 import os
 import io
 import logging
+from pid import PIDController
 from ssd_mobilenet_v3_coco import SSDMobileNet_V3_Small_Coco_PostProcessed as SSMobileNetV3
+from facessd_mobilenet_v2 import FaceSSD_MobileNet_V2
 from ssd_mobilenet_v3_coco import LABELS
 
 # 1296x730
@@ -23,12 +25,61 @@ RESOLUTION = (640,480)
 camera = PiCamera(resolution=RESOLUTION, framerate=24)
 camera.annotate_foreground = Color(y=0.2,u=0, v=0)
 camera.annotate_background = Color(y=0.8, u=0, v=0)
-camera.start_preview()
+# camera.start_preview()
 my_overlay = None
-model = SSMobileNetV3()
-label_idxs = model.label_to_category_index(LABELS)
+# model = SSMobileNetV3()
+model = FaceSSD_MobileNet_V2()
+if isinstance(model, FaceSSD_MobileNet_V2):
+    labels = ['face']
+else:
+    labels = LABELS
+label_idxs = model.label_to_category_index(labels)
 
 rawCapture = PiRGBArray(camera, size=RESOLUTION)
+
+# This stuff is horrible but i am just trying to get this to work now. Need to refactor to classes soon.
+import time
+import sys
+import RPi.GPIO as GPIO
+from PCA9685 import PCA9685
+
+
+# Setup range of allowed motion. Need to figure out a better way to do this
+tilt_servo = 0
+pan_servo = 1
+hrange = [10,170]
+vrange = [30,150]
+currentPanAngle = 90
+currentTiltAngle = 90
+
+pwm = PCA9685()
+pwm.setPWMFreq(50)
+# pwm.setServoPulse(1,500)
+def setPan(angle):
+    if angle > hrange[0] and angle < hrange[1]:
+        pwm.setRotationAngle(pan_servo, angle)
+        currentPanAngle = angle
+
+def getPan():
+    return currentPanAngle
+
+def setTilt(angle):
+    if angle > vrange[0] and angle < vrange[1]:
+        pwm.setRotationAngle(tilt_servo, angle)
+        currentTiltAngle = angle
+
+def getTilt():
+    return currentTiltAngle
+
+pan_pid = PIDController(0.05, 0.1, 0)
+pan_pid.reset()
+tilt_pid = PIDController(0.05, 0.2, 0)
+tilt_pid.reset()
+setPan(90)
+setTilt(90)
+
+
+
 print("Starting Scan Loop **********")
 
 start_time = time.time()
@@ -41,9 +92,6 @@ for frame in camera.capture_continuous(rawCapture, format="bgr", use_video_port=
     tensor_im = image.copy()
     tensor_im = Image.fromarray(np.uint8(image)).convert('RGB')
     tensor_im = tensor_im.resize((320,320))
-
-
-
 
     predictions = model.predict(np.array(tensor_im))
     boxes = predictions.get('detection_boxes')
@@ -78,6 +126,23 @@ for frame in camera.capture_continuous(rawCapture, format="bgr", use_video_port=
         frame_count = 0
     frame_count += 1
 
+    if tracked_object:
+        (y1, x1, y2, x2) = tracked_object['box']
+        tilt_error = 100 - (y1+y2)*200/2
+        tilt_value = tilt_pid.update(tilt_error)
+        pan_error = 100 - (x1+x2)*200/2
+        pan_value = pan_pid.update(pan_error)
+        print("******")
+        print("******")
+        print(tracked_object['box'])
+        print("(", x1*200, y1*200, ")", "(", x2*200, y2*200, ")")
+        print("Target center is", (x1+x2)*100, (y1 + y2)*100)
+        print(pan_error, tilt_error)
+        print("pan: ", pan_value)
+        print("tilt: ", tilt_value)
+        setPan(getPan() + pan_value)
+        setTilt(getTilt() - tilt_value)
+
 
 #     Annotate image for display
 #     cv2.CV_LOAD_IMAGE_COLOR = 1 # set flag to 1 to give colour image
@@ -95,7 +160,7 @@ for frame in camera.capture_continuous(rawCapture, format="bgr", use_video_port=
 
 
     for object in objects:
-        (x1, y1, x2, y2) = object['box']
+        (y1, x1, y2, x2) = object['box']
         (l, r, t, b) = (x1 * im_width, x2 * im_width, y1 * im_height, y2 * im_height)
         if object == tracked_object:
             thickness = 2

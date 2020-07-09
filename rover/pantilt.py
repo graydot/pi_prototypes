@@ -13,11 +13,9 @@ vrange = [0,180]
 #=====
 
 #======
-try:
-    print ("This is an PCA9685 routine")
 pwm = PCA9685()
 pwm.setPWMFreq(50)
-# pwm.setServoPulse(1,500) 
+# pwm.setServoPulse(1,500)
 pwm.setRotationAngle(1, 90)
     current_h = hrange[0]
     h_dir = 1
@@ -40,7 +38,7 @@ pwm.setRotationAngle(1, 90)
             (v_dir < 0 and current_v == vrange[0]):
             v_dir *= -1
 
-        
+
 
         time.sleep(0.01)
 
