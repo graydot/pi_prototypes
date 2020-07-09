@@ -98,7 +98,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
 
                         # create image with correct size and black background
                         button_img = Image.new('RGBA', button_size, "black")
-                        
+
                         #button_img.putalpha(128)
                         # put text on button with 10px margins
                         button_draw = ImageDraw.Draw(button_img)
@@ -107,7 +107,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
                         # put button on source image in position (0, 0)
 
                         pil_im.paste(button_img, (0, 0))
-                        bg_w, bg_h = pil_im.size 
+                        bg_w, bg_h = pil_im.size
                         # WeatherSTEM logo in lower left
                         size = 64
                         # WSLimg = Image.open("WeatherSTEMLogoSkyBackground.png")
