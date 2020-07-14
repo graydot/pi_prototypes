@@ -1,48 +1,50 @@
-import time
-import sys
-import RPi.GPIO as GPIO
 from PCA9685 import PCA9685
+import logging
 
-
-# Setup range of allowed motion. Need to figure out a better way to do this
-tilt_servo = 0
-pan_servo = 1
-hrange = [0,180]
-vrange = [0,180]
-
-#=====
-
-#======
-pwm = PCA9685()
-pwm.setPWMFreq(50)
-# pwm.setServoPulse(1,500)
-pwm.setRotationAngle(1, 90)
-    current_h = hrange[0]
-    h_dir = 1
-    current_v = vrange[0]
-    v_dir = 2
-
-    while True:
-        # setServoPulse(2,2500)
-        print str(current_h)
-        print str(current_v)
-        pwm.setRotationAngle(1,current_h)
-        pwm.setRotationAngle(0,current_v)
-        current_h += h_dir
-        if (h_dir > 0 and current_h == hrange[1]) or \
-            (h_dir < 0 and current_h == hrange[0]):
-            h_dir *= -1
-
-        current_v += v_dir
-        if (v_dir > 0 and current_v == vrange[1]) or \
-            (v_dir < 0 and current_v == vrange[0]):
-            v_dir *= -1
-
-
-
-        time.sleep(0.01)
-
-except:
-    pwm.exit_PCA9685()
-    print ("\nProgram end", sys.exc_info()[0], sys.exc_info()[1])
-    exit()
+class PanTilt:
+    def __init__(self,
+                 tilt_servo = 0,
+                 pan_servo = 1,
+                 pan_range = [0,180],
+                 tilt_range = [0,180],
+                 start_pan = 90,
+                 start_tilt = 90
+                 ):
+        self.tilt_servo = tilt_servo
+        self.pan_servo = pan_servo
+        # Setup range of allowed motion. Need to figure out a better way to do this
+        # FIXME: Autodetect?
+        self.pan_range = pan_range
+        self.tilt_range = tilt_range
+        self.pwm = PCA9685()
+        self.pwm.setPWMFreq(50)
+        self._pan = start_pan
+        self._tilt = start_tilt
+        self.pan(start_pan)
+        self.tilt(start_tilt)
+        
+    def pan(self, angle):
+        if angle > self.pan_range[0] and angle < self.pan_range[1]:
+            self.pwm.setRotationAngle(self.pan_servo, angle)
+            self._pan = angle
+        else:
+            logging.warning("Pan angle %d outside allowed limits", angle)
+        
+    def get_pan(self):
+        return self._pan
+        
+        
+    def tilt(self, angle):
+        if angle > self.tilt_range[0] and angle < self.tilt_range[1]:
+            self.pwm.setRotationAngle(self.tilt_servo, angle)
+            self._tilt = angle
+        else:
+            logging.warning("Tilt angle %d outside allowed limits", angle)
+        
+    def get_tilt(self):
+        return self._tilt
+        
+    
+    def cleanup(self):
+        self.pwm.exit_PCA9685()
+    
