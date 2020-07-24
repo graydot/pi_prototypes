@@ -18,16 +18,21 @@ class Detector:
     def __init__(
             self,
             resolution,
-            queue, finished,
+            image_queue, image_finished,
+            streaming_queue, streaming_finished,
             center_x, center_y
             ):
         # We don't need start_preview as creating an overlay seems to create a preview anyway.
         # camera.start_preview()
         self.resolution = resolution
         
-        self.output = QueueOutput(queue, finished)
-        self.queue = queue
-        self.finished = finished
+        self.output = QueueOutput(
+            [image_queue],
+            [image_finished, streaming_finished])
+            
+        self.queue = image_queue
+        self.streaming_queue = streaming_queue
+        self.finished = image_finished
         self.center_x = center_x
         self.center_y = center_y
         
@@ -63,7 +68,7 @@ class Detector:
                         frame = self.queue.get(False)
                 except Empty:
                     if frame == None:
-                        pass            
+                        continue 
                     cv2.CV_LOAD_IMAGE_COLOR = 1 # set flag to 1 to give colour image
                     npframe = np.fromstring(frame, dtype=np.uint8)
                     pil_frame = cv2.imdecode(npframe,cv2.CV_LOAD_IMAGE_COLOR)
@@ -153,7 +158,6 @@ class Detector:
                     myText = "Rover Eyes " + dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S') +\
                         " FPS " + str(fps) + \
                         (". Tracking " + tracked_object["name"] if tracked_object else "")
-                    print (myText)
         
                     # Draw the text
                     # ***************** if tracking change color to something else
@@ -180,19 +184,7 @@ class Detector:
                     # put button on source image in position (0, 0)
         
                     pil_im.paste(button_img, (0, 0))
-                    bg_w, bg_h = pil_im.size
-                    # WeatherSTEM logo in lower left
-                    size = 64
-                    # WSLimg = Image.open("WeatherSTEMLogoSkyBackground.png")
-                    # WSLimg.thumbnail((size,size),Image.ANTIALIAS)
-                    # pil_im.paste(WSLimg, (0, bg_h-size))
-        
-                    # SkyWeather log in lower right
-                    # SWLimg = Image.open("SkyWeatherLogoSymbol.png")
-                    # SWLimg.thumbnail((size,size),Image.ANTIALIAS)
-                    # pil_im.paste(SWLimg, (bg_w-size, bg_h-size))
-        
-                    # Save the image
+
                     def _monkey_patch_picamera(overlay):
                         original_send_buffer = picamera.mmalobj.MMALPortPool.send_buffer
         
@@ -206,7 +198,7 @@ class Detector:
                                     raise error
         
                         picamera.mmalobj.MMALPortPool.send_buffer = silent_send_buffer
-        
+                    self.streaming_queue.put(pil_im.tobytes())
                     if self.detector_overlay:
                         self.detector_overlay.update(pil_im.tobytes())
                     else:

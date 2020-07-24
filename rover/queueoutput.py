@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 from io import BytesIO
 class QueueOutput(object):
-    def __init__(self, queue, finished):
-        self.queue = queue
-        self.finished = finished
+    def __init__(self, queues, events):
+        self.queues = queues
+        self.events = events
         self.stream = BytesIO()
 
     def write(self, buf):
@@ -12,11 +12,14 @@ class QueueOutput(object):
             size = self.stream.tell()
             if size:
                 self.stream.seek(0)
-                self.queue.put(self.stream.getvalue())
+                for queue in self.queues:
+                    queue.put(self.stream.getvalue())
                 self.stream.seek(0)
         self.stream.write(buf)
 
     def flush(self):
-        self.queue.close()
-        self.queue.join_thread()
-        self.finished.set()
+        for queue in self.queues:
+            queue.close()
+            queue.join_thread()
+        for finished in self.events:
+            finished.set()

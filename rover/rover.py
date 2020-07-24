@@ -6,6 +6,7 @@ from picamera import Color
 from PIL import ImageFont, ImageDraw, Image
 from threading import Condition, Thread
 from queueoutput import QueueOutput
+from pivideoserver import PiVideoServer
 
 
 
@@ -75,30 +76,6 @@ def pid_process(output, p, i, d, box_coord, origin_coord, action):
             error = 0
             #p.reset()
         output.value = p.update(error)
-        
-
-
-
-
-#if enable_drive:
-#    drive_error = 90 - getPan()
-#    if (abs(drive_error) < 10):
-#        drive_error = 0
-#    drive_value = drive_pid.update(drive_error)/10
-#
-#    if abs(drive_value) > 10:
-#        raise "Risk of Spinning"
-#
-#    if (drive_value ==0 or drive_error ==0):
-#        stop()
-#    elif (drive_value > 0):
-#        right(abs(drive_value))
-#    elif (drive_value < 0):
-#        left(abs(drive_value))
-#
-#    else: # if no bounding box
-#        if enable_drive:
-#            stop()
 
 def set_servos(servos, pan, tilt):
     # signal trap to handle keyboard interrupt
@@ -115,26 +92,24 @@ def set_servos(servos, pan, tilt):
         servos.tilt(tilt_angle)
 
 def set_turn(drive, turn):
-    print(turn)
     # signal trap to handle keyboard interrupt
     signal.signal(signal.SIGINT, signal_handler)
     
     # I am reusing angle returned from pid controll
     while True:
-        print(turn)
         if turn.value < 0:
-            print("Go left")
             drive.left(0.1)
         elif turn.value > 0:
-            print("Go right")
             drive.right(0.1)
         else:
             drive.stop()
         sleep(0.1)
 
 with Manager() as manager:
-    image_queue = Queue()
-    image_finished = Event()
+    image_queue = manager.Queue()
+    image_finished = manager.Event()
+    streaming_queue = manager.Queue()
+    streaming_finished = manager.Event()
     
 
     
@@ -164,9 +139,14 @@ with Manager() as manager:
     turn_i = manager.Value('f', 0.5)
     turn_d = manager.Value('f', 0.5)
     
-    detector = Detector(RESOLUTION, image_queue, image_finished, center_x, center_y)
+    detector = Detector(
+        RESOLUTION, 
+        image_queue, image_finished,
+        streaming_queue, streaming_finished,
+        center_x, center_y)
     servos = PanTilt(pan_range=[10, 170], tilt_range=[30,150], start_pan = START_PAN, start_tilt = START_TILT)
     drive = Drive(LWHEELS, RWHEELS)
+    video = PiVideoServer(streaming_queue, streaming_finished, RESOLUTION)
 
 
 
@@ -180,16 +160,18 @@ with Manager() as manager:
                            args=(turn, turn_p, turn_i, turn_d, pan, 0, 'turn'))
     
     
-    
+    detector_process = Process(target=detector.start)
     servo_process = Process(target=set_servos, args=(servos, pan, tilt))
     drive_process = Process(target=set_turn, args=(drive, turn))
+    video_process = Process(target=video.start)
     procs = [
         servo_process,
         pan_process,
         tilt_process,
         turn_process,
         drive_process,
-        Process(target=detector.start)
+        detector_process, 
+        video_process
         ]
     for proc in procs:
         proc.start()
