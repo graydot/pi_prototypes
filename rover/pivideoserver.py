@@ -53,10 +53,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
                         frame = self.queue.get(False)
                 except Empty:
                     if frame == None:
-                        print("Frame is fully empty")
                         continue 
-                    print("Outside continue")
-                    
                     buf= BytesIO()
                     pil_im = Image.frombytes('RGB', self.resolution, frame)
                     pil_im.save(buf, format= 'JPEG')
