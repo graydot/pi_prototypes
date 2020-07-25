@@ -2,8 +2,6 @@
 from picamera.array import PiRGBArray
 from picamera import PiCamera
 import time
-import cv2
-import os
 import os
 from multiprocessing import Queue, Process, Value, Event, Manager, Pipe
 
@@ -48,9 +46,11 @@ with Manager() as manager:
         RESOLUTION,
         image_queue, image_finished,
         streaming_queue, streaming_finished,
-        center_x, center_y)
+        center_x, center_y,
+        ['person','bird'])
 
     detector.start()
+    detector.join()
 
 
 
