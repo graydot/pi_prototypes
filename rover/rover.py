@@ -5,11 +5,6 @@ from picamera import PiCamera
 from picamera import Color
 from PIL import ImageFont, ImageDraw, Image
 from threading import Condition, Thread
-from queueoutput import QueueOutput
-from pivideoserver import PiVideoServer
-
-
-
 import numpy as np
 import time
 import datetime as dt
@@ -17,23 +12,24 @@ import cv2
 import os
 import io
 import logging
+import traceback
+import RPi.GPIO as g
+from time import sleep
+from multiprocessing import Queue, Process, Value, Event, Manager, Pipe
+import signal
+
+import sys
+sys.path.insert(1, './lib')
+from queueoutput import QueueOutput
+from pivideoserver import PiVideoServer
 from pid import PIDController
 from ssd_mobilenet_v3_coco import SSDMobileNet_V3_Small_Coco_PostProcessed as SSMobileNetV3
 from facessd_mobilenet_v2 import FaceSSD_MobileNet_V2
 from ssd_mobilenet_v3_coco import LABELS
-import traceback
-
-import RPi.GPIO as g
-from time import sleep
 from drive import Drive
 from pantilt import PanTilt
 from pivideoserver import PiVideoServer
 from detector import Detector
-from multiprocessing import Queue, Process, Value, Event, Manager, Pipe
-import signal
-import sys
-
-
 
 enable_pantilt = False
 enable_drive = False
