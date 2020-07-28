@@ -44,8 +44,6 @@ class Detector:
     def start(self):
         try:
             # Have to import it here for it to work with multiprocessing
-            
-            
 
             camera = PiCamera(resolution=self.resolution)
             camera.start_preview()
@@ -74,7 +72,6 @@ class Detector:
             fps = 0
             
             while not self.finished.wait(0.1):
-                print("in loop")
                 try:
                     frame = None
                     while True:
@@ -88,14 +85,11 @@ class Detector:
                     cv2_im_rgb = cv2.cvtColor(pil_frame, cv2.COLOR_BGR2RGB)
                     pil_im = Image.fromarray(cv2_im_rgb)
                     pil_im.save("something.jpg", "JPEG")
-                    print("Saved")
                     tensor_im = pil_im.copy()
                     tensor_im = tensor_im.resize((320,320))
                     tensor_im.save("small.jpg", "JPEG")
-                    print(self.model)
                     predictions = self.model.predict(np.array(tensor_im))
                     boxes = predictions.get('detection_boxes')
-                    print(boxes, len(boxes))
                     if len(boxes):
                         classes = predictions.get('detection_classes')
                         scores = predictions.get('detection_scores')

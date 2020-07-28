@@ -9,6 +9,8 @@ import sys
 sys.path.insert(1, './lib')
 from detector import Detector
 
+
+
 RESOLUTION = (640,480)
 with Manager() as manager:
     image_queue = manager.Queue()
@@ -19,38 +21,17 @@ with Manager() as manager:
     center_x = manager.Value('i', 0.5)
     center_y = manager.Value('i', 0.5)
 
-
-    # pan and tilt angles updated by independent PID processes
-    pan = manager.Value('i', 0)
-    tilt = manager.Value('i', 0)
-
-    turn = manager.Value('i', 0)
-
-    # PID gains for panning
-
-    pan_p = manager.Value('f', 0.05)
-    pan_i = manager.Value('f', 0.1)
-    pan_d = manager.Value('f', 0)
-
-    # PID gains for tilting
-    tilt_p = manager.Value('f', 0.15)
-    tilt_i = manager.Value('f', 0.1)
-    tilt_d = manager.Value('f', 0)
-
-    # PID gains for drive turn
-    turn_p = manager.Value('f', 0.5)
-    turn_i = manager.Value('f', 0.5)
-    turn_d = manager.Value('f', 0.5)
-
     detector = Detector(
         RESOLUTION,
         image_queue, image_finished,
         streaming_queue, streaming_finished,
         center_x, center_y,
         ['person','bird'])
+    detector_process = Process(target=detector.start)
 
-    detector.start()
-    detector.join()
+    # detector.start()
+    detector_process.start()
+    detector_process.join()
 
 
 
