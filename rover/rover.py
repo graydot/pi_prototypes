@@ -136,6 +136,8 @@ with Manager() as manager:
     turn_d = manager.Value('f', 0.5)
     
     detector = Detector(
+        "Rover Eyes",
+        "video",
         RESOLUTION, 
         image_queue, image_finished,
         streaming_queue, streaming_finished,

@@ -7,7 +7,7 @@ from multiprocessing import Queue, Process, Value, Event, Manager, Pipe
 
 import sys
 sys.path.insert(1, './lib')
-from detector import Detector
+from detector import BirdDetector
 from pivideoserver import PiVideoServer
 
 
@@ -23,16 +23,21 @@ with Manager() as manager:
     center_x = manager.Value('i', 0.5)
     center_y = manager.Value('i', 0.5)
 
+
     video = PiVideoServer(streaming_queue, streaming_finished, RESOLUTION)
     video_process = Process(target=video.start)
 
-    detector = Detector(
+    detector = BirdDetector(
+        "Bird Watcher",
+        "image",
         RESOLUTION,
         image_queue, image_finished,
         streaming_queue, streaming_finished,
         center_x, center_y,
-        ['person','bird'])
+        ['person','bird']
+        )
     detector_process = Process(target=detector.start)
+
 
     procs = [
         video_process,

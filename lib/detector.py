@@ -11,21 +11,25 @@ import time
 import datetime as dt
 import logging
 from queueoutput import QueueOutput
+import os
 
 
 class Detector:        
     TENSOR_RESOLUTION = [320,320]
     def __init__(
             self,
+            name,
+            mode,
             resolution,
             image_queue, image_finished,
             streaming_queue, streaming_finished,
             center_x, center_y,
             labels = ['face']
             ):
-        # We don't need start_preview as creating an overlay seems to create a preview anyway.
-        # camera.start_preview()
+
         self.resolution = resolution
+        self.name = name
+        self.mode="video"
         
         self.output = QueueOutput(
             [image_queue],
@@ -39,18 +43,31 @@ class Detector:
         
         self.detector_overlay = None
         self.labels = labels
+        self.camera = None
+
+    def create_camera(self):
+        camera = PiCamera(resolution=self.resolution)
+        camera.start_preview()
+        camera.annotate_foreground = Color(y=0.2,u=0, v=0)
+        camera.annotate_background = Color(y=0.8, u=0, v=0)
+        self.camera = camera
+
+    def start_video_camera(self):
+        self.camera.start_recording(self.output, format="mjpeg")
+
+    def start_photo_camera(self):
+        self.camera.capture_continuous(self.output, format="jpeg")
 
         
     def start(self):
         try:
             # Have to import it here for it to work with multiprocessing
-
-            camera = PiCamera(resolution=self.resolution)
-            camera.start_preview()
-            camera.annotate_foreground = Color(y=0.2,u=0, v=0)
-            camera.annotate_background = Color(y=0.8, u=0, v=0)
-            camera.start_recording(self.output, format="mjpeg")
-            self.camera = camera
+            if self.camera is None:
+                self.create_camera()
+                if self.mode == "video":
+                    self.start_video_camera()
+                else: 
+                    self.start_photo_camera()
 
             if self.labels == ['face']:
                 from facessd_mobilenet_v2 import FaceSSD_MobileNet_V2_EdgeTPU
@@ -85,11 +102,14 @@ class Detector:
                     cv2_im_rgb = cv2.cvtColor(pil_frame, cv2.COLOR_BGR2RGB)
                     pil_im = Image.fromarray(cv2_im_rgb)
                     pil_im.save("something.jpg", "JPEG")
+                    frame_snapshot = pil_im.copy()
                     tensor_im = pil_im.copy()
                     tensor_im = tensor_im.resize((320,320))
                     tensor_im.save("small.jpg", "JPEG")
                     predictions = self.model.predict(np.array(tensor_im))
                     boxes = predictions.get('detection_boxes')
+
+                    objects = None
                     if len(boxes):
                         classes = predictions.get('detection_classes')
                         scores = predictions.get('detection_scores')
@@ -105,12 +125,7 @@ class Detector:
                         objects = list(map(item_to_hashmap , enumerate(objects)))
                         objects = list(filter(lambda item: item["score"] > 0.5, objects))
         
-                        if len(objects) > 0:
-                            tracked_object = objects[0]
-                        else:
-                            tracked_object = None
-                    else:
-                        tracked_object = None
+                        
                     #calculate FPS
                     current_time = time.time()
                     time_elapsed = current_time - start_time
@@ -122,16 +137,14 @@ class Detector:
         
                     draw = ImageDraw.Draw(pil_im)
                     (im_width, im_height) = pil_im.size
-        
+
+                    # we will send the color to green later so the first object is red
+                    thickness = 2
+                    color = 'red'
+                    tracked_object_name = None
                     for object in objects:
                         (y1, x1, y2, x2) = object['box']
                         (l, r, t, b) = (x1 * im_width, x2 * im_width, y1 * im_height, y2 * im_height)
-                        if object == tracked_object:
-                            thickness = 2
-                            color = 'red'
-                        else:
-                            thickness = 1
-                            color = 'LawnGreen'
                         draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)],\
                             width = thickness, fill = color)
         
@@ -164,15 +177,20 @@ class Detector:
                             fill='black',
                             font=font)
                         text_bottom -= text_height - 2 * margin
+                        if tracked_object_name is None:
+                            tracked_object_name = object['name']
+                        thickness = 1
+                        color = 'LawnGreen'
+
             
                     font = ImageFont.truetype("/usr/share/fonts/truetype/freefont/FreeSans.ttf", 8)
-                    myText = "Rover Eyes " + dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S') +\
+                    myText = self.name + dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S') +\
                         " FPS " + str(fps) + \
-                        (". Tracking " + tracked_object["name"] if tracked_object else "")
+                        (". Tracking " + tracked_object_name if tracked_object_name else "")
         
                     # Draw the text
                     # ***************** if tracking change color to something else
-                    if tracked_object:
+                    if len(objects) > 0:
                         color = 'rgb(255, 0, 0)'
                     else:
                         color = 'rgb(255,255,255)'
@@ -216,16 +234,53 @@ class Detector:
                         self.detector_overlay = self.camera.add_overlay(pil_im.tobytes(), size = pil_im.size, layer = 3)
                         self.detector_overlay.layer = 3
                         _monkey_patch_picamera(self.detector_overlay)
-            
-                    # Optimization. Run Face Detection only once per runModelPerIterations.
-                    # But process existing bounding boxes every iteration
-                    if tracked_object:
-                        (y1, x1, y2, x2) = tracked_object['box']
-                        self.center_x.value = (x1 + x2)/2
-                        self.center_y.value = (y1 + y2)/2
 
-        
-        
+                    self.handle_detect(frame_snapshot, objects)
         finally:
             self.camera.stop_recording()
+    def handle_detect(self, frame):
+        raise("Do not use the base class, use one of the child classes BirdDetector or FaceDetector")
 
+class BirdDetector(Detector):
+    def __init__(self, *args):
+        # Create Right folders
+        self.ts = None
+        # Take current directory and rename to previous one by finding timestamp file in it
+        execution_path = os.getcwd()
+        self.directory = os.path.join(execution_path, "Images_" + time.strftime("%a_%b_%d_%H_%M_%S_%Z",time.localtime()))
+        os.mkdir(self.directory)
+        self.file_number = 0
+        # call super
+        super().__init__(*args)
+    def handle_detect(self, frame, objects):
+        if len(objects) == 0:
+            return
+        now = time.time()
+        if self.ts is None:
+            self.ts = now
+        elif now - self.ts < 5:
+            # less than 10 secs, ignore
+            return
+        elif now - self.ts > 5:
+            # Handle image and send ts to current time
+            pass
+        file_name = os.path.join(self.directory, "Bird_" + str(self.file_number) + ".jpg")
+        frame.save(file_name, 'jpeg')
+        print('.')
+
+        self.file_number += 1
+        self.ts = now
+
+class FaceDetector(Detector):
+    def handle_detect(self, frame, objects):
+        # Optimization. Run Face Detection only once per runModelPerIterations.
+        # But process existing bounding boxes every iteration
+        if len(objects)>0:
+            (y1, x1, y2, x2) = objects[0]['box']
+            self.center_x.value = (x1 + x2)/2
+            self.center_y.value = (y1 + y2)/2
+        else:
+            # FIXME - incorporate searching
+            # FIXME - do not reset to 0.5 but stop panning and tilting instead
+            self.center_x.value = 0.5
+            self.center_y.value = 0.5
