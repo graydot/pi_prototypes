@@ -266,6 +266,7 @@ class BirdDetector(Detector):
             pass
         file_name = os.path.join(self.directory, "Bird_" + str(self.file_number) + ".jpg")
         frame.save(file_name, 'jpeg')
+        os.system('irsend SEND_ONCE CANON KEY_S')
         print('.')
 
         self.file_number += 1
