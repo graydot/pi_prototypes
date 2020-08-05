@@ -1,6 +1,4 @@
 # import the necessary packages
-from picamera.array import PiRGBArray
-from picamera import PiCamera
 import time
 import os
 from multiprocessing import Queue, Process, Value, Event, Manager, Pipe
@@ -9,6 +7,7 @@ import sys
 sys.path.insert(1, './lib')
 from detector import BirdDetector
 from pivideoserver import PiVideoServer
+from camera import ThreadedCamera
 
 
 
@@ -19,19 +18,25 @@ with Manager() as manager:
     image_finished = manager.Event()
     streaming_queue = manager.Queue()
     streaming_finished = manager.Event()
+    overlay_queue = manager.Queue()
+    overlay_finished = manager.Event()
+    
 
     center_x = manager.Value('i', 0.5)
     center_y = manager.Value('i', 0.5)
 
+    camera = ThreadedCamera(RESOLUTION, 'video', image_queue, image_finished,
+        overlay_queue, overlay_finished)
+    camera_process = Process(target = camera.start)
 
     video = PiVideoServer(streaming_queue, streaming_finished, RESOLUTION)
     video_process = Process(target=video.start)
 
     detector = BirdDetector(
         "Bird Watcher",
-        "image",
         RESOLUTION,
         image_queue, image_finished,
+        overlay_queue, overlay_finished,
         streaming_queue, streaming_finished,
         center_x, center_y,
         ['person','bird']
@@ -40,6 +45,7 @@ with Manager() as manager:
 
 
     procs = [
+        camera_process,
         video_process,
         detector_process
     ]

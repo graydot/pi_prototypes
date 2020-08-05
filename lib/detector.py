@@ -10,7 +10,6 @@ from queue import Empty
 import time
 import datetime as dt
 import logging
-from queueoutput import QueueOutput
 import os
 
 
@@ -19,25 +18,24 @@ class Detector:
     def __init__(
             self,
             name,
-            mode,
             resolution,
             image_queue, image_finished,
+            overlay_queue, overlay_finished,
             streaming_queue, streaming_finished,
             center_x, center_y,
             labels = ['face']
             ):
 
-        self.resolution = resolution
         self.name = name
-        self.mode="video"
-        
-        self.output = QueueOutput(
-            [image_queue],
-            [image_finished, streaming_finished])
             
         self.queue = image_queue
-        self.streaming_queue = streaming_queue
         self.finished = image_finished
+
+        self.streaming_queue = streaming_queue
+        self.streaming_finished = streaming_finished
+        self.overlay_queue = overlay_queue
+        self.overlay_finished = overlay_finished
+
         self.center_x = center_x
         self.center_y = center_y
         
@@ -45,30 +43,12 @@ class Detector:
         self.labels = labels
         self.camera = None
 
-    def create_camera(self):
-        camera = PiCamera(resolution=self.resolution)
-        camera.start_preview()
-        camera.annotate_foreground = Color(y=0.2,u=0, v=0)
-        camera.annotate_background = Color(y=0.8, u=0, v=0)
-        self.camera = camera
-
-    def start_video_camera(self):
-        self.camera.start_recording(self.output, format="mjpeg")
-
-    def start_photo_camera(self):
-        self.camera.capture_continuous(self.output, format="jpeg")
+    
 
         
     def start(self):
         try:
-            # Have to import it here for it to work with multiprocessing
-            if self.camera is None:
-                self.create_camera()
-                if self.mode == "video":
-                    self.start_video_camera()
-                else: 
-                    self.start_photo_camera()
-
+            print("Starting model load")
             if self.labels == ['face']:
                 from facessd_mobilenet_v2 import FaceSSD_MobileNet_V2_EdgeTPU
                 self.model = FaceSSD_MobileNet_V2_EdgeTPU()
@@ -80,14 +60,12 @@ class Detector:
                     from ssd_mobilenet_v3_coco import LABELS as all_coco_labels
                     self.labels = all_coco_labels
 
-
             self.label_idxs = self.model.label_to_category_index(self.labels)
+            print("Model Loaded")
             
-            output = self.output
             start_time = time.time()
             frame_count = 0
             fps = 0
-            
             while not self.finished.wait(0.1):
                 try:
                     frame = None
@@ -213,31 +191,14 @@ class Detector:
                     # put button on source image in position (0, 0)
         
                     pil_im.paste(button_img, (0, 0))
-
-                    def _monkey_patch_picamera(overlay):
-                        original_send_buffer = picamera.mmalobj.MMALPortPool.send_buffer
-        
-                        def silent_send_buffer(zelf, *args, **kwargs):
-                            try:
-                                original_send_buffer(zelf, *args, **kwargs)
-                            except picamera.exc.PiCameraMMALError as error:
-                                # Only silence MMAL_EAGAIN for our target instance.
-                                our_target = overlay.renderer.inputs[0].pool == zelf
-                                if not our_target or error.status != 14:
-                                    raise error
-        
-                        picamera.mmalobj.MMALPortPool.send_buffer = silent_send_buffer
-                    self.streaming_queue.put(pil_im.tobytes())
-                    if self.detector_overlay:
-                        self.detector_overlay.update(pil_im.tobytes())
-                    else:
-                        self.detector_overlay = self.camera.add_overlay(pil_im.tobytes(), size = pil_im.size, layer = 3)
-                        self.detector_overlay.layer = 3
-                        _monkey_patch_picamera(self.detector_overlay)
+                    pil_bytes = pil_im.tobytes()
+                    self.streaming_queue.put(pil_bytes)
+                    self.overlay_queue.put(pil_bytes)
 
                     self.handle_detect(frame_snapshot, objects)
         finally:
-            self.camera.stop_recording()
+            self.streaming_finished.set()
+            self.overlay_finished.set()
     def handle_detect(self, frame):
         raise("Do not use the base class, use one of the child classes BirdDetector or FaceDetector")
 
