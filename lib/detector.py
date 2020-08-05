@@ -79,11 +79,9 @@ class Detector:
                     pil_frame = cv2.imdecode(npframe,cv2.CV_LOAD_IMAGE_COLOR)
                     cv2_im_rgb = cv2.cvtColor(pil_frame, cv2.COLOR_BGR2RGB)
                     pil_im = Image.fromarray(cv2_im_rgb)
-                    pil_im.save("something.jpg", "JPEG")
                     frame_snapshot = pil_im.copy()
                     tensor_im = pil_im.copy()
                     tensor_im = tensor_im.resize((320,320))
-                    tensor_im.save("small.jpg", "JPEG")
                     predictions = self.model.predict(np.array(tensor_im))
                     boxes = predictions.get('detection_boxes')
 
