@@ -7,6 +7,7 @@ import time
 import gphoto2 as gp
 import numpy as np
 import io
+import queue
 
 
 import sys
@@ -16,49 +17,33 @@ from queueoutput import QueueOutput
 
 class ThreadedCamera:
     def __init__(self, 
-        resolution,
-        mode,
-        outputQueue, 
-        outputFinished,
-        inputQueue,
-        inputFinished):
+        mode):
         # Do not intialize the hardware camera in init. Use in start instead as that is threadsafe
-        self.inputQueue = inputQueue # Used for Overlay
-        self.inputFinished = inputFinished
         self.output = QueueOutput(
-            [outputQueue],
-            [outputFinished])
+            [queue.SimpleQueue()],
+            [])
 
-        self.resolution = resolution
         self.mode = mode
         self.camera = None
+        self.set_resolution()
+
+    def set_resolution(self):
+        raise("Override set_resolution()")
 
     def start(self):
-        raise("Override this method")
+        raise("Override start()")
+
+    def set_overlay_frame(self, frame):
+        pass
+
+    def cleanup(self):
+        pass
     
 
-
-
 class ThreadedPiCamera(ThreadedCamera):
-    def start_preview(self):
-        if self.inputQueue is None:
-            return
-        
-        while not self.inputFinished.wait(0.1):
-            try:
-                frame = None
-                while True:
-                    frame = self.inputQueue.get(False)
-            except Empty:
-                if frame == None:
-                    continue 
-                if self.detector_overlay:
-                    self.detector_overlay.update(frame)
-                else:
-                    pil_im = Image.frombytes('RGB', self.resolution, frame)
-                    self.detector_overlay = self.camera.add_overlay(frame, size = pil_im.size, layer = 3)
-                    self.detector_overlay.layer = 3
-                    self._monkey_patch_picamera(self.detector_overlay)
+    def set_resolution(self):
+        self.resolution = (1280, 720)
+                
 
     def _monkey_patch_picamera(overlay):
         original_send_buffer = picamera.mmalobj.MMALPortPool.send_buffer
@@ -103,8 +88,32 @@ class ThreadedPiCamera(ThreadedCamera):
         finally:
             if self.mode == "video":
                 self.camera.stop_recording()
+    def get_frame(self):
+        if self.camera is None:
+            return None
+        try:
+            frame = None
+            while True:
+                frame = self.output.queue.get(False)
+        except Empty:
+            return frame
+    def set_overlay_frame(self, frame):
+        if self.camera is None:
+            return None
+        if self.detector_overlay:
+            self.detector_overlay.update(frame)
+        else:
+            pil_im = Image.frombytes('RGB', self.resolution, frame)
+            self.detector_overlay = self.camera.add_overlay(frame, size = pil_im.size, layer = 3)
+            self.detector_overlay.layer = 3
+            self._monkey_patch_picamera(self.detector_overlay)
+    
+
+
 
 class ThreadedGPhoto2Camera(ThreadedCamera):
+    def set_resolution(self):
+        self.resolution = (960,640)
     def create_camera(self):
         try:
             camera = gp.Camera()
@@ -117,24 +126,40 @@ class ThreadedGPhoto2Camera(ThreadedCamera):
                 print("Unexpected error:", sys.exc_info())
         except Exception:
             print("Unexpected error:", sys.exc_info())
-    def start_recording(self):
-        while True:
-            capture = self.camera.capture_preview()
-            filedata = capture.get_data_and_size()
-            self.output.write(bytes(filedata))
 
     def start(self):
         try:
             # Have to create camera here for it to work with multiprocessing
             if self.camera is None:
                 self.create_camera()
-            if self.camera:
-                self.start_recording()
-        # except Exception:
-        #     print("Unexpected error:", sys.exc_info())
-        finally: 
-            if self.camera:
-                self.camera.exit()
+        except Exception:
+            print("Unexpected error:", sys.exc_info())
+            
+    def _camerafile2frame(self, capture):
+        filedata = capture.get_data_and_size()
+        return bytes(filedata)
+
+    def get_frame(self):
+        if self.camera is None:
+            return None
+        return self._camerafile2frame(self.camera.capture_preview())
+
+    def save_hires_frame(self, target):
+        if self.camera is None:
+            return None
+        self.camera.exit()
+        self.camera.init()
+        file_path = self.camera.capture(gp.GP_CAPTURE_IMAGE)
+        camera_file = self.camera.file_get(
+            file_path.folder, file_path.name, gp.GP_FILE_TYPE_NORMAL)
+        camera_file.save(target)
+        print("Saved file to", target)
+        
+        return self._camerafile2frame(self.camera.capture_preview())
+    def cleanup(self):
+        if self.camera:
+            self.camera.exit()
+
 
 
 

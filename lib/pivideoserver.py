@@ -55,8 +55,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
                     if frame == None:
                         continue 
                     buf= BytesIO()
-                    pil_im = Image.frombytes('RGB', self.resolution, frame)
-                    pil_im.save(buf, format= 'JPEG')
+                    frame.save(buf, format= 'JPEG')
                     frame = buf.getvalue()
                     self.wfile.write(b'--FRAME\r\n')
                     self.send_header('Content-Type', 'image/jpeg')
@@ -78,12 +77,11 @@ class StreamingServer(socketserver.ThreadingMixIn, HTTPServer):
     daemon_threads = True
         
 class PiVideoServer:
-    def __init__(self, queue, finished, resolution):
+    def __init__(self, queue, finished):
         self.address = ('', 1025)
         # need to use class method due to the way Streaming server is constructed
         StreamingHandler.queue = queue 
         StreamingHandler.finished = finished
-        StreamingHandler.resolution = resolution
         self.server = StreamingServer(self.address, StreamingHandler)
     
     def start(self):

@@ -12,40 +12,29 @@ from camera import ThreadedPiCamera, ThreadedGPhoto2Camera
 
 
 
-RESOLUTION = (960,640) #hardcoded for my canon for now. FIXME
 with Manager() as manager:
-    image_queue = manager.Queue()
-    image_finished = manager.Event()
     streaming_queue = manager.Queue()
-    streaming_finished = manager.Event()
-    overlay_queue = manager.Queue()
-    overlay_finished = manager.Event()
-    
+    streaming_finished = manager.Event()    
 
     center_x = manager.Value('i', 0.5)
     center_y = manager.Value('i', 0.5)
 
-    camera = ThreadedGPhoto2Camera(RESOLUTION, 'image', image_queue, image_finished,
-        overlay_queue, overlay_finished)
-    camera_process = Process(target = camera.start)
+    camera = ThreadedGPhoto2Camera('image')
 
-    video = PiVideoServer(streaming_queue, streaming_finished, RESOLUTION)
+    video = PiVideoServer(streaming_queue, streaming_finished)
     video_process = Process(target=video.start)
 
     detector = BirdDetector(
         "Bird Watcher",
-        RESOLUTION,
-        image_queue, image_finished,
-        overlay_queue, overlay_finished,
+        camera,
         streaming_queue, streaming_finished,
         center_x, center_y,
-        ['person','bird']
+        ['bird']
         )
     detector_process = Process(target=detector.start)
 
 
     procs = [
-        camera_process,
         video_process,
         detector_process
     ]

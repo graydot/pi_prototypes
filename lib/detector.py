@@ -18,185 +18,193 @@ class Detector:
     def __init__(
             self,
             name,
-            resolution,
-            image_queue, image_finished,
-            overlay_queue, overlay_finished,
+            camera,
             streaming_queue, streaming_finished,
             center_x, center_y,
-            labels = ['face']
+            labels = ['face'],
             ):
 
         self.name = name
             
-        self.queue = image_queue
-        self.finished = image_finished
 
         self.streaming_queue = streaming_queue
         self.streaming_finished = streaming_finished
-        self.overlay_queue = overlay_queue
-        self.overlay_finished = overlay_finished
 
         self.center_x = center_x
         self.center_y = center_y
         
-        self.detector_overlay = None
         self.labels = labels
-        self.camera = None
+        self.camera = camera
 
-    
+    def _frame2image(self, frame):
+        cv2.CV_LOAD_IMAGE_COLOR = 1 # set flag to 1 to give colour image
+        npframe = np.fromstring(frame, dtype=np.uint8)
+        pil_frame = cv2.imdecode(npframe,cv2.CV_LOAD_IMAGE_COLOR)
+        cv2_im_rgb = cv2.cvtColor(pil_frame, cv2.COLOR_BGR2RGB)
+        return Image.fromarray(cv2_im_rgb)
+
+    def _load_model(self):
+        print("Starting model load")
+        if self.labels == ['face']:
+            from facessd_mobilenet_v2 import FaceSSD_MobileNet_V2_EdgeTPU
+            self.model = FaceSSD_MobileNet_V2_EdgeTPU()
+        else:
+            from ssd_mobilenet_v3_coco import SSDMobileNet_V3_Coco_EdgeTPU_Quant
+            self.model = SSDMobileNet_V3_Coco_EdgeTPU_Quant()
+            
+            if self.labels is None:
+                from ssd_mobilenet_v3_coco import LABELS as all_coco_labels
+                self.labels = all_coco_labels
+
+        self.label_idxs = self.model.label_to_category_index(self.labels)
+        print("Model Loaded")
+
+    def _get_objects(self, image):
+        predictions = self.model.predict(np.array(image))
+        boxes = predictions.get('detection_boxes')
+
+        objects = None
+        if len(boxes):
+            classes = predictions.get('detection_classes')
+            scores = predictions.get('detection_scores')
+            objects = filter(lambda item: item in self.label_idxs, classes)
+            def item_to_hashmap(index_and_item):
+                index, item = index_and_item
+                return {
+                    "i": index,
+                    "name" : self.model.category_index[item]['name'],
+                    "box" : boxes[index],
+                    "score" : scores[index]
+                }
+            objects = list(map(item_to_hashmap , enumerate(objects)))
+            objects = list(filter(lambda item: item["score"] > 0.5, objects))
+            return objects
+
+    def _generate_overlay_image(self, image, objects, framerate):
+        draw = ImageDraw.Draw(image)
+        (im_width, im_height) = image.size
+
+        # we will set the color to green later so the first object is red
+        thickness = 2
+        color = 'red'
+        tracked_object_name = None
+        for object in objects:
+            (y1, x1, y2, x2) = object['box']
+            (l, r, t, b) = (x1 * im_width, x2 * im_width, y1 * im_height, y2 * im_height)
+            draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)],\
+                width = thickness, fill = color)
+
+            try:
+                font = ImageFont.truetype('arial.ttf', 24)
+            except IOError:
+                font = ImageFont.load_default()
+
+            display_str = object['name'] + ", " + str(object["score"])
+            # If the total height of the display strings added to the top of the bounding
+            # box exceeds the top of the image, stack the strings below the bounding box
+            # instead of above.
+            display_str_height = font.getsize(display_str)[1]
+            # Each display_str has a top and bottom margin of 0.05x.
+            total_display_str_height = (1 + 2 * 0.05) * display_str_height
+
+            if t > total_display_str_height:
+                text_bottom = t
+            else:
+                text_bottom = b + total_display_str_height
+            text_width, text_height = font.getsize(display_str)
+            margin = np.ceil(0.05 * text_height)
+            draw.rectangle(
+                [(l, text_bottom - text_height - 2 * margin), (l + text_width,
+                                                                  text_bottom)],
+                fill=color)
+            draw.text(
+                (l + margin, text_bottom - text_height - margin),
+                display_str,
+                fill='black',
+                font=font)
+            text_bottom -= text_height - 2 * margin
+            if tracked_object_name is None:
+                tracked_object_name = object['name']
+            thickness = 1
+            color = 'LawnGreen'
+
+
+        font = ImageFont.truetype("/usr/share/fonts/truetype/freefont/FreeSans.ttf", 8)
+        myText = self.name + dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S') +\
+            " FPS " + str(framerate) + \
+            (". Tracking " + tracked_object_name if tracked_object_name else "")
+
+        # Draw the text
+        # ***************** if tracking change color to something else
+        if len(objects) > 0:
+            color = 'rgb(255, 0, 0)'
+        else:
+            color = 'rgb(255,255,255)'
+        #draw.text((0, 0), myText,fill = color, font=font)
+
+        # get text size
+        text_size = font.getsize(myText)
+
+        # set button size + 10px margins
+        button_size = (text_size[0]+20, text_size[1]+10)
+
+        # create image with correct size and black background
+        button_img = Image.new('RGBA', button_size, "black")
+
+        #button_img.putalpha(128)
+        # put text on button with 10px margins
+        button_draw = ImageDraw.Draw(button_img)
+        button_draw.text((10, 5), myText, fill = color, font=font)
+
+        # put button on source image in position (0, 0)
+
+        image.paste(button_img, (0, 0))
+        return image
 
         
     def start(self):
         try:
-            print("Starting model load")
-            if self.labels == ['face']:
-                from facessd_mobilenet_v2 import FaceSSD_MobileNet_V2_EdgeTPU
-                self.model = FaceSSD_MobileNet_V2_EdgeTPU()
-            else:
-                from ssd_mobilenet_v3_coco import SSDMobileNet_V3_Coco_EdgeTPU_Quant
-                self.model = SSDMobileNet_V3_Coco_EdgeTPU_Quant()
-                
-                if self.labels is None:
-                    from ssd_mobilenet_v3_coco import LABELS as all_coco_labels
-                    self.labels = all_coco_labels
-
-            self.label_idxs = self.model.label_to_category_index(self.labels)
-            print("Model Loaded")
-            
             start_time = time.time()
             frame_count = 0
             fps = 0
-            while not self.finished.wait(0.1):
-                try:
-                    frame = None
-                    while True:
-                        frame = self.queue.get(False)
-                except Empty:
-                    if frame == None:
-                        continue 
-                    cv2.CV_LOAD_IMAGE_COLOR = 1 # set flag to 1 to give colour image
-                    npframe = np.fromstring(frame, dtype=np.uint8)
-                    pil_frame = cv2.imdecode(npframe,cv2.CV_LOAD_IMAGE_COLOR)
-                    cv2_im_rgb = cv2.cvtColor(pil_frame, cv2.COLOR_BGR2RGB)
-                    pil_im = Image.fromarray(cv2_im_rgb)
-                    frame_snapshot = pil_im.copy()
-                    tensor_im = pil_im.copy()
-                    tensor_im = tensor_im.resize((320,320))
-                    predictions = self.model.predict(np.array(tensor_im))
-                    boxes = predictions.get('detection_boxes')
 
-                    objects = None
-                    if len(boxes):
-                        classes = predictions.get('detection_classes')
-                        scores = predictions.get('detection_scores')
-                        objects = filter(lambda item: item in self.label_idxs, classes)
-                        def item_to_hashmap(index_and_item):
-                            index, item = index_and_item
-                            return {
-                                "i": index,
-                                "name" : self.model.category_index[item]['name'],
-                                "box" : boxes[index],
-                                "score" : scores[index]
-                            }
-                        objects = list(map(item_to_hashmap , enumerate(objects)))
-                        objects = list(filter(lambda item: item["score"] > 0.5, objects))
-        
-                        
-                    #calculate FPS
-                    current_time = time.time()
-                    time_elapsed = current_time - start_time
-                    if time_elapsed >= 1:
-                        fps = int(frame_count/time_elapsed)
-                        start_time = current_time
-                        frame_count = 0
-                    frame_count += 1
-        
-                    draw = ImageDraw.Draw(pil_im)
-                    (im_width, im_height) = pil_im.size
+            self._load_model()
+            print("starting camera")
+            self.camera.start()
+            while True:
+                frame = self.camera.get_frame()
+                if frame is None:
+                    continue
+                pil_im = self._frame2image(frame)
+                
+                hires = pil_im.copy()
+                tensor_im = pil_im.copy()
+                tensor_im = tensor_im.resize((320,320))
+                objects = self._get_objects(tensor_im)
+                
+                self.handle_detect(hires, objects)
+                
 
-                    # we will send the color to green later so the first object is red
-                    thickness = 2
-                    color = 'red'
-                    tracked_object_name = None
-                    for object in objects:
-                        (y1, x1, y2, x2) = object['box']
-                        (l, r, t, b) = (x1 * im_width, x2 * im_width, y1 * im_height, y2 * im_height)
-                        draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)],\
-                            width = thickness, fill = color)
-        
-                        try:
-                            font = ImageFont.truetype('arial.ttf', 24)
-                        except IOError:
-                            font = ImageFont.load_default()
-        
-                        display_str = object['name'] + ", " + str(object["score"])
-                        # If the total height of the display strings added to the top of the bounding
-                        # box exceeds the top of the image, stack the strings below the bounding box
-                        # instead of above.
-                        display_str_height = font.getsize(display_str)[1]
-                        # Each display_str has a top and bottom margin of 0.05x.
-                        total_display_str_height = (1 + 2 * 0.05) * display_str_height
-        
-                        if t > total_display_str_height:
-                            text_bottom = t
-                        else:
-                            text_bottom = b + total_display_str_height
-                        text_width, text_height = font.getsize(display_str)
-                        margin = np.ceil(0.05 * text_height)
-                        draw.rectangle(
-                            [(l, text_bottom - text_height - 2 * margin), (l + text_width,
-                                                                              text_bottom)],
-                            fill=color)
-                        draw.text(
-                            (l + margin, text_bottom - text_height - margin),
-                            display_str,
-                            fill='black',
-                            font=font)
-                        text_bottom -= text_height - 2 * margin
-                        if tracked_object_name is None:
-                            tracked_object_name = object['name']
-                        thickness = 1
-                        color = 'LawnGreen'
+                #calculate FPS
+                current_time = time.time()
+                time_elapsed = current_time - start_time
+                if time_elapsed >= 1:
+                    fps = int(frame_count/time_elapsed)
+                    start_time = current_time
+                    frame_count = 0
+                frame_count += 1
+                overlay_im = self._generate_overlay_image(pil_im, objects, fps)
+                
+                pil_bytes = overlay_im.tobytes()
+                self.streaming_queue.put(overlay_im)
+                self.camera.set_overlay_frame(pil_bytes)
 
-            
-                    font = ImageFont.truetype("/usr/share/fonts/truetype/freefont/FreeSans.ttf", 8)
-                    myText = self.name + dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S') +\
-                        " FPS " + str(fps) + \
-                        (". Tracking " + tracked_object_name if tracked_object_name else "")
-        
-                    # Draw the text
-                    # ***************** if tracking change color to something else
-                    if len(objects) > 0:
-                        color = 'rgb(255, 0, 0)'
-                    else:
-                        color = 'rgb(255,255,255)'
-                    #draw.text((0, 0), myText,fill = color, font=font)
-        
-                    # get text size
-                    text_size = font.getsize(myText)
-        
-                    # set button size + 10px margins
-                    button_size = (text_size[0]+20, text_size[1]+10)
-        
-                    # create image with correct size and black background
-                    button_img = Image.new('RGBA', button_size, "black")
-        
-                    #button_img.putalpha(128)
-                    # put text on button with 10px margins
-                    button_draw = ImageDraw.Draw(button_img)
-                    button_draw.text((10, 5), myText, fill = color, font=font)
-        
-                    # put button on source image in position (0, 0)
-        
-                    pil_im.paste(button_img, (0, 0))
-                    pil_bytes = pil_im.tobytes()
-                    self.streaming_queue.put(pil_bytes)
-                    self.overlay_queue.put(pil_bytes)
-
-                    self.handle_detect(frame_snapshot, objects)
+                
         finally:
             self.streaming_finished.set()
-            self.overlay_finished.set()
+            if self.camera:
+                self.camera.cleanup()
+                
     def handle_detect(self, frame):
         raise("Do not use the base class, use one of the child classes BirdDetector or FaceDetector")
 
@@ -224,9 +232,12 @@ class BirdDetector(Detector):
             # Handle image and send ts to current time
             pass
         file_name = os.path.join(self.directory, "Bird_" + str(self.file_number) + ".jpg")
-        frame.save(file_name, 'jpeg')
+        if len(objects) and self.camera.save_hires_frame:
+            self.camera.save_hires_frame(file_name)
+        else:
+            frame.save(file_name, 'jpeg')
         os.system('irsend SEND_ONCE CANON KEY_S')
-        print('.')
+        print('.', objects[0]['name'], objects[0]['score'])
 
         self.file_number += 1
         self.ts = now
