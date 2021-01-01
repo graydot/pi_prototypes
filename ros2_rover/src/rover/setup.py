@@ -20,7 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'rover_camera = rover.rover_camera:main'
+            'rover_camera = rover.rover_camera:main',
+            'talker = rover.test_listener:main'
         ],
     },
 )
