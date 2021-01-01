@@ -2,12 +2,14 @@ from picamera import PiCamera
 from rover.image_writer import ImageWriter
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
+from sensor_msgs.msg import CompressedImage
+from io import BytesIO
+import numpy as np
 
 class RoverCamera(Node):
     def __init__(self):
         super().__init__('rover_camera')
-        self.publisher_ = self.create_publisher(String, 'raw_images', 10)
+        self.publisher_ = self.create_publisher(CompressedImage, 'raw_images', 10)
         self.camera = PiCamera()
         self.camera.start_preview()
 
@@ -16,7 +18,21 @@ class RoverCamera(Node):
 
 
     def start(self):
-        self.camera.start_recording(self.image_writer, format="mjpeg")
+        stream = BytesIO()  
+        i = 0
+        for foo in self.camera.capture_continuous(stream, format='jpeg'):  
+            # Truncate the stream to the current position (in case  
+            # prior iterations output a longer image)  
+            stream.truncate()  
+            stream.seek(0)
+            image_bytes = stream.getvalue()
+            print("Wrote")
+            msg = CompressedImage()
+            
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.format = "jpeg"
+            msg.data = image_bytes
+            self.publisher_.publish(msg)
 
 
 
