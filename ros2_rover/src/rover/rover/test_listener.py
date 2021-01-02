@@ -2,8 +2,9 @@ import rclpy
 from rclpy.node import Node
 
 from sensor_msgs.msg import CompressedImage
-import cv2
+from PIL import Image
 import numpy as np
+from io import BytesIO
 
 
 class TestListener(Node):
@@ -21,11 +22,12 @@ class TestListener(Node):
 
     def listener_callback(self, msg):
         # self.get_logger().info('I heard: "%s"' % msg.data)
-        nparr = np.frombuffer(msg.data, np.uint8)
-        img=cv2.imdecode(nparr, flags=1)
+        im = Image.open(BytesIO(msg.data))
+        # nparr = np.frombuffer(msg.data, np.uint8)
+        # img=cv2.imdecode(nparr, flags=1)
         img_name = './image_%d.jpg' % self.i
         print('Writing image %s' % img_name)
-        cv2.imwrite(img_name, img)
+        im.save(img_name)
         self.i += 1
 
 
