@@ -23,6 +23,7 @@
   <exec_depend>numpy</exec_depend>
   <exec_depend>cv2</exec_depend>
   <exec_depend>Pillow</exec_depend>
+  <exec_depend>datetime</exec_depend>
 
   <exec_depend>io</exec_depend>
 
