@@ -84,7 +84,7 @@ class PiVideoServer:
         StreamingHandler.queue = queue 
         StreamingHandler.finished = finished
         StreamingHandler.resolution = resolution
-        self.server = StreamingServer(self.address, StreamingHandler)
+        self.server = StreamingServer(self.address, StreamingHandler
     
     def start(self):
         logging.warning("Serving at http://" + socket.getfqdn() + ":" + str(self.address[1]) + "/stream.mjpg")

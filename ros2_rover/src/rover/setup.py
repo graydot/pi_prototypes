@@ -21,7 +21,9 @@ setup(
     entry_points={
         'console_scripts': [
             'rover_camera = rover.rover_camera:main',
-            'talker = rover.test_listener:main'
+            'test_listener = rover.test_listener:main',
+            'object_detector = rover.object_detector:main',
+            'video_stream = rover.video_stream:main'
         ],
     },
 )

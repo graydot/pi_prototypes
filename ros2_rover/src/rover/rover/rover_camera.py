@@ -27,7 +27,7 @@ class RoverCamera(Node):
 
 
 def main():
-    print('Hi from rover.')
+    print('Starting Camera.')
     rclpy.init()
     cam = RoverCamera()
     rclpy.spin(cam)
