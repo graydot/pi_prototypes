@@ -130,3 +130,4 @@ dmypy.json
 
 # Misc
 *.py.swp
+.DS_Store
