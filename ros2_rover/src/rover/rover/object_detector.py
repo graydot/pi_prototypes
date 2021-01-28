@@ -2,10 +2,12 @@ import rclpy
 from rclpy.node import Node
 
 from sensor_msgs.msg import CompressedImage
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 from io import BytesIO
 from rover.facessd_mobilenet_v2 import FaceSSD_MobileNet_V2_EdgeTPU
+import time
+import datetime as dt
 
 
 class ObjectDetector(Node):
@@ -25,11 +27,19 @@ class ObjectDetector(Node):
         self.model = FaceSSD_MobileNet_V2_EdgeTPU()
         labels = ['face']
         self.label_idxs = self.model.label_to_category_index(labels)
+        self.start_time = None
+        self.frame_count = 0
+        self.fps = 0
+
+        self.center_x = 0
+        self.center_y = 0
+        
         
 
     def listener_callback(self, msg):
+        print("Callback called")
         im = Image.open(BytesIO(msg.data))
-        tensor_im = pil_im.copy()
+        tensor_im = im.copy()
         tensor_im = tensor_im.resize((320,320))
 
         predictions = self.model.predict(np.array(tensor_im))
@@ -59,15 +69,17 @@ class ObjectDetector(Node):
         # TODO: Consider moving everything below to a separate Node later
         #calculate FPS
         current_time = time.time()
-        time_elapsed = current_time - start_time
+        if self.start_time == None:
+            self.start_time = current_time
+        time_elapsed = current_time - self.start_time
         if time_elapsed >= 1:
-            fps = int(frame_count/time_elapsed)
-            start_time = current_time
-            frame_count = 0
-        frame_count += 1
+            self.fps = int(self.frame_count/time_elapsed)
+            self.start_time = current_time
+            self.frame_count = 0
+        self.frame_count += 1
 
-        draw = ImageDraw.Draw(pil_im)
-        (im_width, im_height) = pil_im.size
+        draw = ImageDraw.Draw(im)
+        (im_width, im_height) = im.size
 
         for object in objects:
             (y1, x1, y2, x2) = object['box']
@@ -112,10 +124,10 @@ class ObjectDetector(Node):
             text_bottom -= text_height - 2 * margin
 
         font = ImageFont.truetype("/usr/share/fonts/truetype/freefont/FreeSans.ttf", 8)
-        myText = "Rover Eyes " + dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S') +\
-            " FPS " + str(fps) + \
+        myText = dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S') +\
+            " FPS " + str(self.fps) + \
             (". Tracking " + tracked_object["name"] if tracked_object else "")
-
+        print(myText)
         # Draw the text
         # ***************** if tracking change color to something else
         if tracked_object:
@@ -140,14 +152,14 @@ class ObjectDetector(Node):
 
         # put button on source image in position (0, 0)
 
-        pil_im.paste(button_img, (0, 0))
+        im.paste(button_img, (0, 0))
 
         # Optimization. Run Face Detection only once per runModelPerIterations.
         # But process existing bounding boxes every iteration
         if tracked_object:
             (y1, x1, y2, x2) = tracked_object['box']
-            self.center_x.value = (x1 + x2)/2
-            self.center_y.value = (y1 + y2)/2
+            self.center_x = (x1 + x2)/2
+            self.center_y = (y1 + y2)/2
 
 
 def main(args=None):

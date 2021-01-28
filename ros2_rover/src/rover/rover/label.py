@@ -16,11 +16,11 @@
 import logging
 
 # Lib
-import tensorflow as tf
 from google.protobuf import text_format
 
 # app
-import string_int_label_map_pb2
+import rover.string_int_label_map_pb2 as string_int_label_map_pb2
+import tensorflow as tf
 
 
 def convert_label_map_to_categories(label_map,
@@ -101,13 +101,18 @@ def load_labelmap(path):
     Returns:
       a StringIntLabelMapProto
     """
-    with tf.compat.v1.gfile.GFile(path, 'r') as fid:
-        label_map_string = fid.read()
-        label_map = string_int_label_map_pb2.StringIntLabelMap()
-        try:
-            text_format.Merge(label_map_string, label_map)
-        except text_format.ParseError:
-            label_map.ParseFromString(label_map_string)
+    label_map_string = """
+      item {
+        name: "face"
+        id: 1
+        display_name: "face"
+      }
+    """
+    label_map = string_int_label_map_pb2.StringIntLabelMap()
+    try:
+        text_format.Merge(label_map_string, label_map)
+    except text_format.ParseError:
+        label_map.ParseFromString(label_map_string)
     _validate_label_map(label_map)
     return label_map
 
